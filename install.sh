@@ -1,175 +1,77 @@
 #!/bin/bash
-# ============================================
-# LIFERS SCRIPT V3 - install.sh (STABLE)
-# ============================================
-
 set -e
 
-echo "================================="
-echo " LIFERS INSTALLER"
-echo "================================="
-
 MODE="$1"
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+PANEL="/var/www/pterodactyl"
 
-if [ -z "$MODE" ]; then
-  echo "[FATAL] Mode not provided"
+if [[ "$MODE" != "protect" && "$MODE" != "super" ]]; then
+  echo "[FATAL] Mode invalid"
   exit 1
 fi
 
-# -------------------------------
-# INPUT PANEL URL
-# -------------------------------
 read -p "Enter Pterodactyl panel URL (without http/https): " PANEL_URL
-echo "[INFO] Panel URL: $PANEL_URL"
 
-# -------------------------------
-# AUTO DETECT PANEL PATH
-# -------------------------------
-echo "[INFO] Detecting Pterodactyl panel path..."
-
-PANEL_PATH=""
-
-for p in \
-  /var/www/pterodactyl \
-  /var/www/panel \
-  /var/www/html/pterodactyl \
-  /var/www/html/panel
-do
-  if [ -f "$p/artisan" ]; then
-    PANEL_PATH="$p"
-    break
-  fi
-done
-
-if [ -z "$PANEL_PATH" ]; then
-  echo "[FATAL] artisan file not found"
-  echo "[HINT] Pterodactyl must be installed WITHOUT Docker"
+if [ ! -d "$PANEL" ]; then
+  echo "[FATAL] Pterodactyl not found at $PANEL"
   exit 1
 fi
 
-echo "[OK] Pterodactyl found at: $PANEL_PATH"
-cd "$PANEL_PATH"
+echo "[OK] Pterodactyl found at $PANEL"
 
-# -------------------------------
-# SSL INSTALL
-# -------------------------------
-if [ "$MODE" = "ssl" ]; then
-  read -p "Enter domain/subdomain: " DOMAIN
+# ================= MIDDLEWARE =================
+MW="$PANEL/app/Http/Middleware/LifersProtect.php"
 
-  echo "[INFO] Installing SSL for $DOMAIN"
+cat > "$MW" <<'PHP'
+<?php
 
-  apt update -y
-  apt install -y nginx certbot python3-certbot-nginx
+namespace App\Http\Middleware;
 
-  certbot --nginx \
-    -d "$DOMAIN" \
-    --non-interactive \
-    --agree-tos \
-    -m "admin@$DOMAIN"
+use Closure;
 
-  echo "[SUCCESS] SSL CREATED"
-  exit 0
-fi
+class LifersProtect
+{
+    public function handle($request, Closure $next)
+    {
+        if (!auth()->check() || auth()->user()->id !== 1) {
+            abort(403);
+        }
+        return $next($request);
+    }
+}
+PHP
 
-# -------------------------------
-# VALIDATE SOURCE FILES
-# -------------------------------
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# ================ REGISTER ====================
+KERNEL="$PANEL/app/Http/Kernel.php"
+grep -q LifersProtect "$KERNEL" || sed -i "/routeMiddleware = \[/a\        'lifers.protect' => \App\Http\Middleware\LifersProtect::class," "$KERNEL"
 
-if [ ! -f "$SCRIPT_DIR/assets/protect.blade.php" ]; then
-  echo "[FATAL] assets/protect.blade.php not found"
-  exit 1
-fi
+# ================ ROUTES ======================
+ROUTES="$PANEL/routes/web.php"
 
-if [ ! -f "$SCRIPT_DIR/middleware/ProtectDF.php" ]; then
-  echo "[FATAL] middleware/ProtectDF.php not found"
-  exit 1
-fi
+grep -q lifers.protect "$ROUTES" || cat >> "$ROUTES" <<'PHP'
 
-if [ ! -f "$SCRIPT_DIR/middleware/SuperProtectDF.php" ]; then
-  echo "[FATAL] middleware/SuperProtectDF.php not found"
-  exit 1
-fi
-
-# -------------------------------
-# CREATE DIRECTORIES
-# -------------------------------
-echo "[INFO] Creating directories..."
-
-mkdir -p app/Http/Middleware/Lifers
-mkdir -p resources/views/lifers
-
-# -------------------------------
-# COPY FILES
-# -------------------------------
-echo "[INFO] Copying protect files..."
-
-cp "$SCRIPT_DIR/assets/protect.blade.php" \
-   resources/views/lifers/protect.blade.php
-
-cp "$SCRIPT_DIR/middleware/ProtectDF.php" \
-   app/Http/Middleware/Lifers/ProtectDF.php
-
-cp "$SCRIPT_DIR/middleware/SuperProtectDF.php" \
-   app/Http/Middleware/Lifers/SuperProtectDF.php
-
-# -------------------------------
-# REGISTER MIDDLEWARE
-# -------------------------------
-echo "[INFO] Registering middleware..."
-
-KERNEL="app/Http/Kernel.php"
-
-if ! grep -q "lifers.protect" "$KERNEL"; then
-  sed -i "/routeMiddleware = \[/a \
-        'lifers.protect' => \\\App\\\\Http\\\\Middleware\\\\Lifers\\\\ProtectDF::class,\
-        'lifers.super'   => \\\App\\\\Http\\\\Middleware\\\\Lifers\\\\SuperProtectDF::class," \
-  "$KERNEL"
-fi
-
-# -------------------------------
-# INJECT ROUTES
-# -------------------------------
-echo "[INFO] Injecting routes..."
-
-ROUTES="routes/web.php"
-sed -i '/LIFERS PROTECT START/,/LIFERS PROTECT END/d' "$ROUTES"
-
-echo "// ===== LIFERS PROTECT START =====" >> "$ROUTES"
-
-if [ "$MODE" = "protect" ]; then
-cat <<EOF >> "$ROUTES"
-Route::middleware(['web','auth','lifers.protect'])->group(function () {
-    Route::any('/admin/nodes{any?}', fn() => view('lifers.protect'))->where('any','.*');
-    Route::any('/admin/nests{any?}', fn() => view('lifers.protect'))->where('any','.*');
-    Route::any('/admin/locations{any?}', fn() => view('lifers.protect'))->where('any','.*');
+Route::middleware(['auth','lifers.protect'])->group(function () {
+    Route::prefix('admin')->group(function () {
+        Route::any('/nodes{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/nests{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/locations{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/users{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/servers{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/settings{any}', fn() => abort(403))->where('any','.*');
+        Route::any('/api{any}', fn() => abort(403))->where('any','.*');
+    });
+    Route::any('/account/api{any}', fn() => abort(403))->where('any','.*');
 });
-EOF
-fi
+PHP
 
-if [ "$MODE" = "super" ]; then
-cat <<EOF >> "$ROUTES"
-Route::middleware(['web','auth','lifers.super'])->group(function () {
-    Route::any('/admin{any?}', fn() => view('lifers.protect'))->where('any','.*');
-    Route::any('/server{any?}', fn() => view('lifers.protect'))->where('any','.*');
-    Route::any('/account/api{any?}', fn() => view('lifers.protect'))->where('any','.*');
-});
-EOF
-fi
+# ================ VIEW 403 ====================
+cp "$BASE_DIR/assets/protect.blade.php" \
+"$PANEL/resources/views/errors/403.blade.php"
 
-echo "// ===== LIFERS PROTECT END =====" >> "$ROUTES"
+php "$PANEL/artisan" view:clear
+php "$PANEL/artisan" route:clear
+php "$PANEL/artisan" config:clear
 
-# -------------------------------
-# CLEAR CACHE
-# -------------------------------
-echo "[INFO] Clearing Laravel cache..."
-php artisan optimize:clear
-
-# -------------------------------
-# DONE
-# -------------------------------
-echo "================================="
-echo " INSTALL SUCCESSFUL"
-echo " MODE : $MODE"
-echo " UUID 1 ONLY ACTIVE"
-echo "================================="
+echo "==============================="
+echo " INSTALL FINISHED SUCCESSFULLY"
+echo "==============================="
