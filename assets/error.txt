@@ -1,0 +1,8 @@
+SSL CREATION FAILED
+
+Possible reasons:
+- Invalid Cloudflare API Token
+- Domain not using Cloudflare DNS
+- DNS permission missing
+- Rate limit reached
+- Certbot error
