@@ -1,7 +1,5 @@
 #!/bin/bash
-# ============================================
-# LIFERS SCRIPT V3 - MAIN MENU (FIXED)
-# ============================================
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 clear
 echo "================================="
@@ -14,35 +12,14 @@ echo "[4] Uninstall Protect DF"
 echo "[5] Uninstall Super Protect DF"
 echo "[0] Exit"
 echo "================================="
+read -p "Select option: " opt
 
-read -p "Select option: " CHOICE
-
-case "$CHOICE" in
-  1)
-    echo "[INFO] Selected: Create SSL"
-    bash install.sh ssl
-    ;;
-  2)
-    echo "[INFO] Selected: Install Protect DF"
-    bash install.sh protect
-    ;;
-  3)
-    echo "[INFO] Selected: Install Super Protect DF"
-    bash install.sh super
-    ;;
-  4)
-    echo "[INFO] Selected: Uninstall Protect DF"
-    bash uninstall.sh protect
-    ;;
-  5)
-    echo "[INFO] Selected: Uninstall Super Protect DF"
-    bash uninstall.sh super
-    ;;
-  0)
-    echo "Exit."
-    exit 0
-    ;;
-  *)
-    echo "[ERROR] Invalid option"
-    ;;
+case "$opt" in
+  1) bash "$BASE_DIR/ssl.sh" ;;
+  2) bash "$BASE_DIR/install.sh" protect ;;
+  3) bash "$BASE_DIR/install.sh" super ;;
+  4) bash "$BASE_DIR/uninstall.sh" protect ;;
+  5) bash "$BASE_DIR/uninstall.sh" super ;;
+  0) exit 0 ;;
+  *) echo "[ERROR] Invalid option"; exit 1 ;;
 esac
