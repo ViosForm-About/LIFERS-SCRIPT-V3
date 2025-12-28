@@ -1,7 +1,0 @@
-WILDCARD SSL CREATED SUCCESSFULLY
-
-✔ Domain secured
-✔ *.domain.com active
-✔ Auto-renew enabled
-
-Thank you for using LIFERS SCRIPT
